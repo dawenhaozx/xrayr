@@ -856,3 +856,8 @@ func compareVersion(version1, version2 string) int {
 	}
 	return 0
 }
+
+// GetIpsList will pull user form panel
+func (c *APIClient) GetIpsList() error {
+	return nil
+}
