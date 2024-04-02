@@ -28,23 +28,24 @@ type LimitInfo struct {
 }
 
 type Controller struct {
-	server       *core.Instance
-	config       *Config
-	clientInfo   api.ClientInfo
-	apiClient    api.API
-	nodeInfo     *api.NodeInfo
-	Tag          string
-	userList     *[]api.UserInfo
-	tasks        []periodicTask
-	limitedUsers map[api.UserInfo]LimitInfo
-	warnedUsers  map[api.UserInfo]int
-	panelType    string
-	ibm          inbound.Manager
-	obm          outbound.Manager
-	stm          stats.Manager
-	dispatcher   *mydispatcher.DefaultDispatcher
-	startAt      time.Time
-	logger       *log.Entry
+	server        *core.Instance
+	config        *Config
+	clientInfo    api.ClientInfo
+	apiClient     api.API
+	nodeInfo      *api.NodeInfo
+	Tag           string
+	userList      *[]api.UserInfo
+	tasks         []periodicTask
+	limitedUsers  map[api.UserInfo]LimitInfo
+	warnedUsers   map[api.UserInfo]int
+	panelType     string
+	ibm           inbound.Manager
+	obm           outbound.Manager
+	stm           stats.Manager
+	dispatcher    *mydispatcher.DefaultDispatcher
+	startAt       time.Time
+	logger        *log.Entry
+	initialZeroed bool
 }
 
 type periodicTask struct {
@@ -147,6 +148,12 @@ func (c *Controller) Start() error {
 			Periodic: &task.Periodic{
 				Interval: time.Duration(c.config.UpdatePeriodic) * time.Second,
 				Execute:  c.userInfoMonitor,
+			}},
+		periodicTask{
+			tag: "ips monitor",
+			Periodic: &task.Periodic{
+				Interval: 15 * time.Second,
+				Execute:  c.IpsInfoMonitor,
 			}},
 	)
 
@@ -476,6 +483,65 @@ func limitUser(c *Controller, user api.UserInfo, silentUsers *[]api.UserInfo) {
 	c.logger.Printf("Limit User: %s Speed: %d End: %s", c.buildUserTag(&user), c.config.AutoSpeedLimitConfig.LimitSpeed, time.Unix(c.limitedUsers[user].end, 0).Format("01-02 15:04:05"))
 	user.SpeedLimit = uint64((c.config.AutoSpeedLimitConfig.LimitSpeed * 1000000) / 8)
 	*silentUsers = append(*silentUsers, user)
+}
+
+func (c *Controller) IpsInfoMonitor() (err error) {
+	// delay to start
+	if time.Since(c.startAt) < 15*time.Second {
+		return nil
+	}
+	// Get User traffic
+	var AuserTraffic []api.UserTraffic
+	for _, user := range *c.userList {
+		up, down, _, _ := c.getTraffic(c.buildUserTag(&user))
+		if up > 0 || down > 0 {
+			AuserTraffic = append(AuserTraffic, api.UserTraffic{
+				UID:      user.UID,
+				Email:    user.Email,
+				Upload:   up,
+				Download: down})
+
+		}
+	}
+
+	// Report Online info
+	if onlineDevice, err := c.GetOnlineDevice(c.Tag); err != nil {
+		c.logger.Print(err)
+	} else if len(*onlineDevice) > 0 || c.initialZeroed {
+		// Only report user has traffic > 100kb to allow ping test
+		var result []api.OnlineUser
+		var nocountUID = make(map[int]struct{})
+		for _, traffic := range AuserTraffic {
+			total := traffic.Upload + traffic.Download
+			if total < int64(100000) {
+				nocountUID[traffic.UID] = struct{}{}
+			}
+		}
+		for _, online := range *onlineDevice {
+			if _, ok := nocountUID[online.UID]; !ok {
+				result = append(result, online)
+			}
+		}
+
+		if err = c.apiClient.ReportNodeOnlineUsers(&result); err != nil {
+			log.Print(err)
+		} else {
+			log.Printf("Total %d online users, %d Reported", len(*onlineDevice), len(result))
+		}
+		// If onlineDevice becomes non-zero for the first time, execute the steps inside this block
+		if !c.initialZeroed && len(*onlineDevice) > 0 {
+			log.Println("onlineDevice becomes non-zero for the first time. Executing the steps.")
+			c.initialZeroed = true
+		}
+		// If onlineDevice becomes zeroed out after being non-zero, execute the steps inside this block
+		if c.initialZeroed && len(*onlineDevice) == 0 {
+			log.Println("onlineDevice becomes zero after being non-zero. Executing the steps.")
+			c.initialZeroed = false
+		}
+	}
+	// Get Online info
+	c.apiClient.GetIpsList()
+	return nil
 }
 
 func (c *Controller) userInfoMonitor() (err error) {

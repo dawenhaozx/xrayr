@@ -267,6 +267,49 @@ func (c *APIClient) GetUserList() (UserList *[]api.UserInfo, err error) {
 	return &userList, nil
 }
 
+// GetIpsList will pull user form panel
+func (c *APIClient) GetIpsList() error {
+	var users []*aips
+	path := "/api/v1/server/UniProxy/aips"
+
+	switch c.NodeType {
+	case "V2ray", "Trojan", "Shadowsocks":
+		break
+	default:
+		return fmt.Errorf("unsupported node type: %s", c.NodeType)
+	}
+
+	res, err := c.client.R().
+		SetHeader("If-None-Match", c.eTags["users"]).
+		ForceContentType("application/json").
+		Get(path)
+
+	// Etag identifier for a specific version of a resource. StatusCode = 304 means no changed
+	if res.StatusCode() == 304 {
+		return errors.New("AliveIPs same")
+	}
+	// update etag
+	if res.Header().Get("Etag") != "" && res.Header().Get("Etag") != c.eTags["users"] {
+		c.eTags["users"] = res.Header().Get("Etag")
+	}
+
+	usersResp, err := c.parseResponse(res, path, err)
+	if err != nil {
+		return err
+	}
+	b, _ := usersResp.Get("users").Encode()
+	json.Unmarshal(b, &users)
+	if len(users) == 0 {
+		return errors.New("users is null")
+	}
+
+	for _, user := range users {
+		api.UserAliveIPsMap[user.Id] = user.AliveIPs
+	}
+
+	return nil
+}
+
 // ReportUserTraffic reports the user traffic
 func (c *APIClient) ReportUserTraffic(userTraffic *[]api.UserTraffic) error {
 	path := "/api/v1/server/UniProxy/push"
@@ -311,6 +354,23 @@ func (c *APIClient) ReportNodeStatus(nodeStatus *api.NodeStatus) (err error) {
 
 // ReportNodeOnlineUsers implements the API interface
 func (c *APIClient) ReportNodeOnlineUsers(onlineUserList *[]api.OnlineUser) error {
+	reportOnline := make(map[int]int)
+	data := make(map[int][]string)
+	for _, onlineuser := range *onlineUserList {
+		// json structure: { UID1:["ip1","ip2"],UID2:["ip3","ip4"] }
+		data[onlineuser.UID] = append(data[onlineuser.UID], fmt.Sprintf("%s_%d", onlineuser.IP, onlineuser.OT))
+		reportOnline[onlineuser.UID]++
+	}
+	c.LastReportOnline = reportOnline // Update LastReportOnline
+	// 输出发送的具体数据，用于调试
+	fmt.Printf("Sending data to %s: %v\n", "/api/v1/server/UniProxy/alive", data)
+	path := "/api/v1/server/UniProxy/alive"
+	res, err := c.client.R().SetBody(data).ForceContentType("application/json").Post(path)
+	_, err = c.parseResponse(res, path, err)
+	// 面板无对应接口时先不报错
+	if err != nil {
+		return nil
+	}
 	return nil
 }
 
