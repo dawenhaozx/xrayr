@@ -21,6 +21,12 @@ import (
 	"github.com/wyx2685/XrayR/api"
 )
 
+var UserAliveIPsMap sync.Map    // 用户UUID和其存活的IP地址映射关系的全局变量
+var OnlineInfo map[string]int64 // 添加 OnlineInfo 字段
+func init() {
+	OnlineInfo = make(map[string]int64)
+}
+
 type UserInfo struct {
 	UID         int
 	SpeedLimit  uint64
@@ -145,7 +151,7 @@ func (l *Limiter) GetOnlineDevice(tag string) (*[]api.OnlineUser, error) {
 			ipMap.Range(func(key, value interface{}) bool {
 				uid := value.(int)
 				ip := key.(string)
-				onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
+				onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip, OT: OnlineInfo[ip]})
 				return true
 			})
 			inboundInfo.UserOnlineIP.Delete(email) // Reset online device
@@ -158,6 +164,24 @@ func (l *Limiter) GetOnlineDevice(tag string) (*[]api.OnlineUser, error) {
 	return &onlineUser, nil
 }
 
+func GetUserAliveIPs(user int) []string {
+	v, ok := api.UserAliveIPsMap[user]
+	if !ok {
+		return nil
+	}
+	return v
+}
+func ipAllowed(ip string, aliveIPs []string) int {
+	if len(aliveIPs) == 0 {
+		return 0 // AliveIPs为空
+	}
+	for _, aliveIP := range aliveIPs {
+		if aliveIP == ip {
+			return 1 // IP在AliveIPs中
+		}
+	}
+	return 2 // IP不在AliveIPs中
+}
 func (l *Limiter) GetUserBucket(tag string, email string, ip string) (limiter *rate.Limiter, SpeedLimit bool, Reject bool) {
 	if value, ok := l.InboundInfo.Load(tag); ok {
 		var (
@@ -174,9 +198,16 @@ func (l *Limiter) GetUserBucket(tag string, email string, ip string) (limiter *r
 			userLimit = u.SpeedLimit
 			deviceLimit = u.DeviceLimit
 		}
-
 		// Local device limit
 		ipMap := new(sync.Map)
+		// 检查当前 IP 是否在用户的 AliveIPs 中
+		aliveIPs := GetUserAliveIPs(uid)
+		ipStatus := ipAllowed(ip, aliveIPs)
+		if ipStatus == 2 && deviceLimit > 0 && deviceLimit <= len(aliveIPs) {
+			ipMap.Delete(ip)
+			return nil, false, true
+		}
+		OnlineInfo[ip] = time.Now().UnixMilli()
 		ipMap.Store(ip, uid)
 		// If any device is online
 		if v, ok := inboundInfo.UserOnlineIP.LoadOrStore(email, ipMap); ok {
@@ -188,7 +219,7 @@ func (l *Limiter) GetUserBucket(tag string, email string, ip string) (limiter *r
 					counter++
 					return true
 				})
-				if counter > deviceLimit && deviceLimit > 0 {
+				if ipStatus != 1 && deviceLimit > 0 && deviceLimit < counter+len(aliveIPs) {
 					ipMap.Delete(ip)
 					return nil, false, true
 				}

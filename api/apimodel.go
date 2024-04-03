@@ -73,6 +73,7 @@ type UserInfo struct {
 type OnlineUser struct {
 	UID int
 	IP  string
+	OT  int64
 }
 
 type UserTraffic struct {
@@ -108,4 +109,12 @@ type REALITYConfig struct {
 	MaxClientVer     string
 	MaxTimeDiff      uint64
 	ShortIds         []string
+}
+
+// 用户UUID和其存活的IP地址映射关系的全局变量
+var UserAliveIPsMap map[int][]string
+
+// 初始化全局变量
+func init() {
+	UserAliveIPsMap = make(map[int][]string)
 }
