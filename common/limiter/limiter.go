@@ -21,11 +21,8 @@ import (
 	"github.com/wyx2685/XrayR/api"
 )
 
-var UserAliveIPsMap sync.Map    // 用户UUID和其存活的IP地址映射关系的全局变量
-var OnlineInfo map[string]int64 // 添加 OnlineInfo 字段
-func init() {
-	OnlineInfo = make(map[string]int64)
-}
+var UserAliveIPsMap sync.Map // 用户UUID和其存活的IP地址映射关系的全局变量
+var OnlineInfo sync.Map      // 添加 OnlineInfo 字段
 
 type UserInfo struct {
 	UID         int
@@ -151,7 +148,10 @@ func (l *Limiter) GetOnlineDevice(tag string) (*[]api.OnlineUser, error) {
 			ipMap.Range(func(key, value interface{}) bool {
 				uid := value.(int)
 				ip := key.(string)
-				onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip, OT: OnlineInfo[ip]})
+				v, ok := OnlineInfo.Load(ip)
+				if ok {
+					onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip, OT: v.(int64)})
+				}
 				return true
 			})
 			inboundInfo.UserOnlineIP.Delete(email) // Reset online device
@@ -207,7 +207,7 @@ func (l *Limiter) GetUserBucket(tag string, email string, ip string) (limiter *r
 			ipMap.Delete(ip)
 			return nil, false, true
 		}
-		OnlineInfo[ip] = time.Now().UnixMilli()
+		OnlineInfo.Store(ip, time.Now().UnixMilli())
 		ipMap.Store(ip, uid)
 		// If any device is online
 		if v, ok := inboundInfo.UserOnlineIP.LoadOrStore(email, ipMap); ok {
