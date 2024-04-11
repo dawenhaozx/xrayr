@@ -152,7 +152,7 @@ func (c *Controller) Start() error {
 		periodicTask{
 			tag: "ips monitor",
 			Periodic: &task.Periodic{
-				Interval: time.Second,
+				Interval: 15 * time.Second,
 				Execute:  c.IpsInfoMonitor,
 			}},
 	)
@@ -487,8 +487,7 @@ func limitUser(c *Controller, user api.UserInfo, silentUsers *[]api.UserInfo) {
 
 func (c *Controller) IpsInfoMonitor() (err error) {
 	// delay to start
-	// 检查当前秒数是否为15、30、45或60
-	if time.Now().Second()%15 != 0 {
+	if time.Since(c.startAt) < 15*time.Second {
 		return nil
 	}
 	// Get User traffic
