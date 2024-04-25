@@ -644,7 +644,7 @@ func (c *Controller) IpsInfoMonitor() (err error) {
 	if time.Since(c.startAt) < time.Duration(api.PushInterval)*time.Second {
 		return nil
 	}
-	b := int64(api.PushInterval) * 1000
+	b := int64(c.config.DeviceOnlineMinTraffic * 1000)
 	// Get Online info
 	c.apiClient.GetIpsList()
 	// Get User traffic
