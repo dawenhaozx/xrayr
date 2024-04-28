@@ -160,13 +160,13 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map) (*[]api.Onl
 			email := key.(string)
 			ipMap := value.(*sync.Map)
 			var uid int
-			var X int
+			var X int64
 			ipMap.Range(func(key, value interface{}) bool {
 				uid = value.(int)
 				ip := key.(string)
 				a, _ := ipAllowedMap[tag].Load(ip)
 				if x, b := userTraffic.Load(uid); b {
-					X = x.(int)
+					X = x.(int64)
 				}
 				if a.(int) == 2 || X <= 0 {
 					ip = ""
@@ -346,7 +346,7 @@ func onlineDevicesEqual(A *sync.Map, B *sync.Map) bool {
 	diff := true
 	A.Range(func(key, valueA interface{}) bool {
 		if valueB, ok := B.Load(key); ok {
-			if valueB == valueA {
+			if valueB == valueA && valueB != "" {
 				log.Infof("compare AB, [Same] UID:%d, prev:%s now:%s", key, valueA, valueB)
 				diff = false
 				return false
