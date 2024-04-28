@@ -644,7 +644,6 @@ func (c *Controller) IpsInfoMonitor() (err error) {
 	if time.Since(c.startAt) < time.Duration(api.PushInterval)*time.Second {
 		return nil
 	}
-	b := int64(c.config.DeviceOnlineMinTraffic * 1000)
 	// Get Online info
 	c.apiClient.GetIpsList()
 	// Get User traffic
@@ -660,21 +659,19 @@ func (c *Controller) IpsInfoMonitor() (err error) {
 		pud := v.(int64)
 		npud := nud - pud
 		// log.Infof("UID: %d, nud - pud: %d, prevup&down: %d ", user.UID, npud, pud)
-		if npud > b {
-			ATraffic.Store(user.UID, nud)
-		}
+		ATraffic.Store(user.UID, npud)
 		Otraffic[c.Tag].Store(user.UID, nud)
 	}
 	// Report Online info
 	onlineDevice, diff, err := c.GetOnlineDevice(c.Tag, ATraffic)
 	if err != nil {
 		c.logger.Print(err)
-	} else if diff || (len(*onlineDevice) > 0 && time.Since(c.nextsend) >= 120*time.Second) {
+	} else if diff || time.Since(c.nextsend) >= 120*time.Second {
 		if err = c.apiClient.ReportNodeOnlineUsers(onlineDevice); err != nil {
 			log.Print(err)
 		} else {
 			c.nextsend = time.Now()
-			log.Infof("Total %d online users, %d Reported", len(*onlineDevice), len(*onlineDevice))
+			// log.Infof("Total %d online users, %d Reported", len(*onlineDevice), len(*onlineDevice))
 		}
 	}
 	return nil

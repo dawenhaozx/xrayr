@@ -24,7 +24,6 @@ import (
 
 var nOnlineDevice = make(map[string]*sync.Map)
 var ipAllowedMap = make(map[string]*sync.Map)
-var Acount = make(map[string]int)
 
 func newO(tag string) {
 	nOnlineDevice[tag] = new(sync.Map)
@@ -142,8 +141,6 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map) (*[]api.Onl
 	var onlineUser []api.OnlineUser
 	PrevO := new(sync.Map)
 	NowO := new(sync.Map)
-	Ac := 0
-	Bc := 0
 	if value, ok := l.InboundInfo.Load(tag); ok {
 		inboundInfo := value.(*InboundInfo)
 		// Clear Speed Limiter bucket for users who are not online
@@ -159,40 +156,37 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map) (*[]api.Onl
 			return true
 		})
 		nOnlineDevice[tag] = new(sync.Map)
-		Ac = Acount[tag]
-		Acount[tag] = 0
 		inboundInfo.UserOnlineIP.Range(func(key, value interface{}) bool {
 			email := key.(string)
 			ipMap := value.(*sync.Map)
 			var uid int
-			var X bool
+			var X int
 			ipMap.Range(func(key, value interface{}) bool {
 				uid = value.(int)
 				ip := key.(string)
 				a, _ := ipAllowedMap[tag].Load(ip)
-				if _, b := userTraffic.Load(uid); b {
-					X = b
+				if x, b := userTraffic.Load(uid); b {
+					X = x.(int)
 				}
-				if a.(int) != 2 && X {
-					onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
-					nOnlineDevice[tag].Store(uid, ip)
-					Acount[tag]++
-					log.Infof("onlineUser Store,UID: %d,IP: %s", uid, ip)
+				if a.(int) == 2 || X <= 0 {
+					ip = ""
 				}
+				onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
+				nOnlineDevice[tag].Store(uid, ip)
+				log.Infof("onlineUser Store,UID: %d,IP: %s", uid, ip)
 				return true
 			})
-			if !X {
+			if X <= 0 {
 				inboundInfo.UserOnlineIP.Delete(email) // Reset online device
 			}
 
 			return true
 		})
 		NowO = nOnlineDevice[tag]
-		Bc = Acount[tag]
 	} else {
 		return nil, false, fmt.Errorf("no such inbound in limiter: %s", tag)
 	}
-	diff := onlineDevicesEqual(Ac, Bc, PrevO, NowO)
+	diff := onlineDevicesEqual(PrevO, NowO)
 	return &onlineUser, diff, nil
 }
 
@@ -348,15 +342,7 @@ func determineRate(nodeLimit, userLimit uint64) (limit uint64) {
 	}
 }
 
-func onlineDevicesEqual(C int, D int, A *sync.Map, B *sync.Map) bool {
-	if C == 0 && D == 0 {
-		log.Infof("compare AB, [Same] prev nil & now nil")
-		return false
-	}
-	if C != D {
-		log.Infof("compare ABcount, [different] A:%d & D:%d", C, D)
-		return true
-	}
+func onlineDevicesEqual(A *sync.Map, B *sync.Map) bool {
 	diff := true
 	A.Range(func(key, valueA interface{}) bool {
 		if valueB, ok := B.Load(key); ok {
