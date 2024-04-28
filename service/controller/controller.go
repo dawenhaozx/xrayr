@@ -659,7 +659,7 @@ func (c *Controller) IpsInfoMonitor() (err error) {
 		}
 		pud := v.(int64)
 		npud := nud - pud
-		log.Infof("UID: %d, nud - pud: %d, prevup&down: %d ", user.UID, npud, pud)
+		// log.Infof("UID: %d, nud - pud: %d, prevup&down: %d ", user.UID, npud, pud)
 		if npud > b {
 			ATraffic.Store(user.UID, nud)
 		}

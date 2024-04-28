@@ -309,10 +309,8 @@ func (c *APIClient) GetIpsList() error {
 	}
 	api.UserAliveIPsMap = new(sync.Map)
 	for _, user := range users {
-		if len(user.AliveIPs) > 0 {
-			api.UserAliveIPsMap.Store(user.Id, user.AliveIPs)
-			log.Infof("GetIpsList: userid=%d, aliveips=%s, lastOnline=%d", user.Id, user.AliveIPs, c.LastReportOnline[user.Id])
-		}
+		api.UserAliveIPsMap.Store(user.Id, user.AliveIPs)
+		log.Infof("GetIpsList: userid=%d, aliveips=%s, lastOnline=%d", user.Id, user.AliveIPs, c.LastReportOnline[user.Id])
 	}
 
 	return nil
