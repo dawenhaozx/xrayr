@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sync"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -45,7 +46,11 @@ type Controller struct {
 	dispatcher   *mydispatcher.DefaultDispatcher
 	startAt      time.Time
 	logger       *log.Entry
+	nextsend     time.Time
+	newpush      int
 }
+
+var Otraffic = make(map[string]*sync.Map)
 
 type periodicTask struct {
 	tag string
@@ -70,6 +75,8 @@ func New(server *core.Instance, api api.API, config *Config, panelType string) *
 		dispatcher: server.GetFeature(routing.DispatcherType()).(*mydispatcher.DefaultDispatcher),
 		startAt:    time.Now(),
 		logger:     logger,
+		nextsend:   time.Now(),
+		newpush:    61,
 	}
 
 	return controller
@@ -77,7 +84,6 @@ func New(server *core.Instance, api api.API, config *Config, panelType string) *
 
 // Start implement the Start() function of the service interface
 func (c *Controller) Start() error {
-	c.clientInfo = c.apiClient.Describe()
 	// First fetch Node Info
 	newNodeInfo, err := c.apiClient.GetNodeInfo()
 	if err != nil {
@@ -139,28 +145,37 @@ func (c *Controller) Start() error {
 		periodicTask{
 			tag: "node monitor",
 			Periodic: &task.Periodic{
-				Interval: time.Duration(c.config.UpdatePeriodic) * time.Second,
+				Interval: time.Duration(api.PullInterval) * time.Second,
 				Execute:  c.nodeInfoMonitor,
 			}},
 		periodicTask{
 			tag: "user monitor",
 			Periodic: &task.Periodic{
-				Interval: time.Duration(c.config.UpdatePeriodic) * time.Second,
+				Interval: time.Duration(c.newpush) * time.Second,
 				Execute:  c.userInfoMonitor,
 			}},
+		periodicTask{
+			tag: "ips monitor",
+			Periodic: &task.Periodic{
+				Interval: time.Duration(api.PushInterval) * time.Second,
+				Execute:  c.IpsInfoMonitor,
+			}},
 	)
-
+	c.newpush = api.PushInterval*4 + 1
+	Otraffic[c.Tag] = new(sync.Map)
+	c.clientInfo = c.apiClient.Describe()
 	// Check cert service in need
 	if c.nodeInfo.EnableTLS && !c.config.EnableREALITY {
 		c.tasks = append(c.tasks, periodicTask{
 			tag: "cert monitor",
 			Periodic: &task.Periodic{
-				Interval: time.Duration(c.config.UpdatePeriodic) * time.Second * 60,
+				Interval: time.Duration(api.PullInterval) * time.Second * 60,
 				Execute:  c.certMonitor,
 			}})
 	}
 
 	// Start periodic tasks
+	time.Sleep(time.Duration(int64(api.PushInterval)-time.Now().Unix()%int64(api.PushInterval)) * time.Second)
 	for i := range c.tasks {
 		c.logger.Printf("Start %s periodic task", c.tasks[i].tag)
 		go c.tasks[i].Start()
@@ -184,10 +199,9 @@ func (c *Controller) Close() error {
 
 func (c *Controller) nodeInfoMonitor() (err error) {
 	// delay to start
-	if time.Since(c.startAt) < time.Duration(c.config.UpdatePeriodic)*time.Second {
+	if time.Since(c.startAt) < time.Duration(api.PullInterval)*time.Second {
 		return nil
 	}
-
 	// First fetch Node Info
 	var nodeInfoChanged = true
 	newNodeInfo, err := c.apiClient.GetNodeInfo()
@@ -480,7 +494,7 @@ func limitUser(c *Controller, user api.UserInfo, silentUsers *[]api.UserInfo) {
 
 func (c *Controller) userInfoMonitor() (err error) {
 	// delay to start
-	if time.Since(c.startAt) < time.Duration(c.config.UpdatePeriodic)*time.Second {
+	if time.Since(c.startAt) < time.Duration(c.newpush)*time.Second {
 		return nil
 	}
 
@@ -525,7 +539,7 @@ func (c *Controller) userInfoMonitor() (err error) {
 	var upCounterList []stats.Counter
 	var downCounterList []stats.Counter
 	AutoSpeedLimit := int64(c.config.AutoSpeedLimitConfig.Limit)
-	UpdatePeriodic := int64(c.config.UpdatePeriodic)
+	UpdatePeriodic := int64(c.newpush)
 	limitedUsers := make([]api.UserInfo, 0)
 	for _, user := range *c.userList {
 		up, down, upCounter, downCounter := c.getTraffic(c.buildUserTag(&user))
@@ -580,32 +594,7 @@ func (c *Controller) userInfoMonitor() (err error) {
 			c.logger.Print(err)
 		} else {
 			c.resetTraffic(&upCounterList, &downCounterList)
-		}
-	}
-
-	// Report Online info
-	if onlineDevice, err := c.GetOnlineDevice(c.Tag); err != nil {
-		c.logger.Print(err)
-	} else if len(*onlineDevice) > 0 {
-		// Only report user has traffic > 100kb to allow ping test
-		var result []api.OnlineUser
-		var nocountUID = make(map[int]struct{})
-		for _, traffic := range userTraffic {
-			total := traffic.Upload + traffic.Download
-			if total < int64(c.config.DeviceOnlineMinTraffic*1000) {
-				nocountUID[traffic.UID] = struct{}{}
-			}
-		}
-		for _, online := range *onlineDevice {
-			if _, ok := nocountUID[online.UID]; !ok {
-				result = append(result, online)
-			}
-		}
-
-		if err = c.apiClient.ReportNodeOnlineUsers(&result); err != nil {
-			log.Print(err)
-		} else {
-			log.Printf("Total %d online users, %d Reported", len(*onlineDevice), len(result))
+			Otraffic[c.Tag] = new(sync.Map)
 		}
 	}
 
@@ -645,6 +634,44 @@ func (c *Controller) certMonitor() error {
 			if err != nil {
 				c.logger.Print(err)
 			}
+		}
+	}
+	return nil
+}
+
+func (c *Controller) IpsInfoMonitor() (err error) {
+	// delay to start
+	if time.Since(c.startAt) < time.Duration(api.PushInterval)*time.Second {
+		return nil
+	}
+	// Get Online info
+	c.apiClient.GetIpsList()
+	// Get User traffic
+	ATraffic := new(sync.Map)
+	for _, user := range *c.userList {
+		up, down, _, _ := c.getTraffic(c.buildUserTag(&user))
+		nud := up + down
+		v, ok := Otraffic[c.Tag].Load(user.UID)
+		if !ok || v == nil {
+			// 如果值为 nil，则设为零
+			v = int64(0)
+		}
+		pud := v.(int64)
+		npud := nud - pud
+		// log.Infof("UID: %d, nud - pud: %d, prevup&down: %d ", user.UID, npud, pud)
+		ATraffic.Store(user.UID, npud)
+		Otraffic[c.Tag].Store(user.UID, nud)
+	}
+	// Report Online info
+	onlineDevice, diff, err := c.GetOnlineDevice(c.Tag, ATraffic, int64(c.config.DeviceOnlineMinTraffic)*1000)
+	if err != nil {
+		c.logger.Print(err)
+	} else if diff || (len(*onlineDevice) > 0 && time.Since(c.nextsend) >= 120*time.Second) {
+		if err = c.apiClient.ReportNodeOnlineUsers(onlineDevice); err != nil {
+			log.Print(err)
+		} else {
+			c.nextsend = time.Now()
+			// log.Infof("Total %d online users, %d Reported", len(*onlineDevice), len(*onlineDevice))
 		}
 	}
 	return nil
