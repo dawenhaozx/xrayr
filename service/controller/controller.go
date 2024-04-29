@@ -666,7 +666,7 @@ func (c *Controller) IpsInfoMonitor() (err error) {
 	onlineDevice, diff, err := c.GetOnlineDevice(c.Tag, ATraffic)
 	if err != nil {
 		c.logger.Print(err)
-	} else if diff || time.Since(c.nextsend) >= 120*time.Second {
+	} else if diff || (len(*onlineDevice) > 0 && time.Since(c.nextsend) >= 120*time.Second) {
 		if err = c.apiClient.ReportNodeOnlineUsers(onlineDevice); err != nil {
 			log.Print(err)
 		} else {
