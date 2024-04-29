@@ -161,6 +161,7 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map) (*[]api.Onl
 			ipMap := value.(*sync.Map)
 			var uid int
 			var X int64
+			var pip string
 			ipMap.Range(func(key, value interface{}) bool {
 				uid = value.(int)
 				ip := key.(string)
@@ -169,14 +170,19 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map) (*[]api.Onl
 					X = x.(int64)
 				}
 				p, _ := PrevO.Load(uid)
+				if p == nil || p == "" {
+					pip = ""
+				} else {
+					pip = p.(string)
+				}
 				if a.(int) != 2 && X > 0 {
-					if p.(string) != ip {
+					if pip != ip {
 						diff = true
 					}
 					onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
 					nOnlineDevice[tag].Store(uid, ip)
 					log.Infof("onlineUser Store,UID: %d,IP: %s", uid, ip)
-				} else if p.(string) != "" {
+				} else if pip != "" {
 					diff = true
 					ip = ""
 					onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
