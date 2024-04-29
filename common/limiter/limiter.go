@@ -24,6 +24,7 @@ import (
 
 var nOnlineDevice = make(map[string]*sync.Map)
 var ipAllowedMap = make(map[string]*sync.Map)
+var Acount = make(map[string]int)
 
 func newO(tag string) {
 	nOnlineDevice[tag] = new(sync.Map)
@@ -140,6 +141,14 @@ func (l *Limiter) DeleteInboundLimiter(tag string) error {
 func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map) (*[]api.OnlineUser, bool, error) {
 	var onlineUser []api.OnlineUser
 	PrevO := new(sync.Map)
+	nOnlineDevice[tag].Range(func(key, value interface{}) bool {
+		PrevO.Store(key, value)
+		return true
+	})
+	nOnlineDevice[tag] = new(sync.Map)
+	Ac := Acount[tag]
+	Acount[tag] = 0
+	Bc := 0
 	diff := false
 	if value, ok := l.InboundInfo.Load(tag); ok {
 		inboundInfo := value.(*InboundInfo)
@@ -151,11 +160,6 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map) (*[]api.Onl
 			}
 			return true
 		})
-		nOnlineDevice[tag].Range(func(key, value interface{}) bool {
-			PrevO.Store(key, value)
-			return true
-		})
-		nOnlineDevice[tag] = new(sync.Map)
 		inboundInfo.UserOnlineIP.Range(func(key, value interface{}) bool {
 			email := key.(string)
 			ipMap := value.(*sync.Map)
@@ -181,6 +185,7 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map) (*[]api.Onl
 					}
 					onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
 					nOnlineDevice[tag].Store(uid, ip)
+					Acount[tag]++
 					log.Infof("onlineUser Store,UID: %d,IP: %s", uid, ip)
 				} else if pip != "" {
 					diff = true
@@ -199,7 +204,10 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map) (*[]api.Onl
 	} else {
 		return nil, false, fmt.Errorf("no such inbound in limiter: %s", tag)
 	}
-
+	Bc = Acount[tag]
+	if Ac != Bc {
+		diff = true
+	}
 	return &onlineUser, diff, nil
 }
 
