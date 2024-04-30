@@ -163,13 +163,13 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*
 			ipMap := value.(*sync.Map)
 			var uid int
 			var X int64
-			var A int64
+			var A int
 			var pip string
 			ipMap.Range(func(key, value interface{}) bool {
 				uid = value.(int)
 				ip := key.(string)
 				if a, aok := ipAllowedMap[tag].Load(ip); aok {
-					A = a.(int64)
+					A = a.(int)
 				}
 				if x, b := userTraffic.Load(uid); b {
 					X = x.(int64)
