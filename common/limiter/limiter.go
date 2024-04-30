@@ -196,8 +196,8 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*
 		return nil, false, fmt.Errorf("no such inbound in limiter: %s", tag)
 	}
 	PrevO.Range(func(key, value interface{}) bool {
-		uid := value.(int)
-		ip := key.(string)
+		uid := key.(int)
+		ip := value.(string)
 		var nip string
 		if n, _ := nOnlineDevice[tag].Load(uid); n == nil || n == "" {
 			nip = ""
