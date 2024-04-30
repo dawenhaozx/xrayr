@@ -171,7 +171,7 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*
 				if x, b := userTraffic.Load(uid); b {
 					X = x.(int64)
 				}
-				if p, _ := PrevO.Load(uid); p == nil || p == "" {
+				if p, ok := PrevO.Load(uid); !ok {
 					pip = ""
 				} else {
 					pip = p.(string)
@@ -199,7 +199,7 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*
 		uid := key.(int)
 		ip := value.(string)
 		var nip string
-		if n, _ := nOnlineDevice[tag].Load(uid); n == nil || n == "" {
+		if _, ok := nOnlineDevice[tag].Load(uid); !ok {
 			nip = ""
 			if nip != ip {
 				onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: nip})
