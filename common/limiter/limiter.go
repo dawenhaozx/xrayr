@@ -141,9 +141,9 @@ func (l *Limiter) DeleteInboundLimiter(tag string) error {
 func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*[]api.OnlineUser, bool, error) {
 	var onlineUser []api.OnlineUser
 
-	PrevO := new(sync.Map)
+	PrevO := make(map[int]string)
 	nOnlineDevice[tag].Range(func(key, value interface{}) bool {
-		PrevO.Store(key, value)
+		PrevO[key.(int)] = value.(string)
 		return true
 	})
 	nOnlineDevice[tag] = new(sync.Map)
@@ -163,20 +163,19 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*
 			ipMap := value.(*sync.Map)
 			var uid int
 			var X int64
+			var A int64
 			var pip string
 			ipMap.Range(func(key, value interface{}) bool {
 				uid = value.(int)
 				ip := key.(string)
-				a, _ := ipAllowedMap[tag].Load(ip)
+				if a, aok := ipAllowedMap[tag].Load(ip); aok {
+					A = a.(int64)
+				}
 				if x, b := userTraffic.Load(uid); b {
 					X = x.(int64)
 				}
-				if p, ok := PrevO.Load(uid); !ok {
-					pip = ""
-				} else {
-					pip = p.(string)
-				}
-				if a.(int) != 2 && X > T {
+				pip = PrevO[uid]
+				if A != 2 && X > T {
 					if pip != ip {
 						diff = true
 					}
@@ -186,7 +185,7 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*
 				}
 				return true
 			})
-			if X <= T {
+			if A == 2 || X <= T {
 				inboundInfo.UserOnlineIP.Delete(email) // Reset online device
 			}
 
@@ -195,19 +194,14 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*
 	} else {
 		return nil, false, fmt.Errorf("no such inbound in limiter: %s", tag)
 	}
-	PrevO.Range(func(key, value interface{}) bool {
-		uid := key.(int)
-		ip := value.(string)
-		var nip string
-		if _, ok := nOnlineDevice[tag].Load(uid); !ok {
-			nip = ""
-			if nip != ip {
-				onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: nip})
+	for u, i := range PrevO {
+		if i != "" {
+			if _, ok := nOnlineDevice[tag].Load(u); !ok {
+				onlineUser = append(onlineUser, api.OnlineUser{UID: u, IP: ""})
 				diff = true
 			}
 		}
-		return true
-	})
+	}
 	return &onlineUser, diff, nil
 }
 
