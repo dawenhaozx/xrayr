@@ -173,9 +173,12 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic map[int]int64, T int64
 				}
 				X = userTraffic[uid]
 				pip = PrevO[uid]
-				if A != 2 && X > T {
+				if A != 2 {
 					if pip != ip {
 						diff = true
+					}
+					if X <= T {
+						ip = ""
 					}
 					onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
 					nOnlineDevice[tag].Store(uid, ip)
@@ -192,14 +195,14 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic map[int]int64, T int64
 	} else {
 		return nil, false, fmt.Errorf("no such inbound in limiter: %s", tag)
 	}
-	for u, i := range PrevO {
-		if i != "" {
-			if _, ok := nOnlineDevice[tag].Load(u); !ok {
-				onlineUser = append(onlineUser, api.OnlineUser{UID: u, IP: ""})
-				diff = true
-			}
-		}
-	}
+	// for u, i := range PrevO {
+	// 	if i != "" {
+	// 		if _, ok := nOnlineDevice[tag].Load(u); !ok {
+	// 			onlineUser = append(onlineUser, api.OnlineUser{UID: u, IP: ""})
+	// 			diff = true
+	// 		}
+	// 	}
+	// }
 	return &onlineUser, diff, nil
 }
 
@@ -243,6 +246,7 @@ func (l *Limiter) GetUserBucket(tag string, email string, ip string) (limiter *r
 		aliveIPs := GetUserAliveIPs(uid)
 		ipStatus := ipAllowed(ip, aliveIPs)
 		ipAllowedMap[tag].Store(ip, ipStatus)
+		log.Infof("Check: ipStatus=%d, userid=%d, aliveips=%s, devicelimit=%d, speedlimit=%d", ipStatus, uid, ip, deviceLimit, userLimit)
 		if ipStatus == 2 && deviceLimit > 0 && deviceLimit <= len(aliveIPs) {
 			return nil, false, true
 		}
