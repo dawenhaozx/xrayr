@@ -160,6 +160,12 @@ func (c *Controller) Start() error {
 				Interval: time.Duration(api.PushInterval) * time.Second,
 				Execute:  c.IpsInfoMonitor,
 			}},
+		periodicTask{
+			tag: "getips monitor",
+			Periodic: &task.Periodic{
+				Interval: time.Duration(api.PushInterval+5) * time.Second,
+				Execute:  c.getIpsInfoMonitor,
+			}},
 	)
 	c.newpush = api.PushInterval*4 + 1
 	Otraffic[c.Tag] = new(sync.Map)
@@ -644,22 +650,20 @@ func (c *Controller) IpsInfoMonitor() (err error) {
 	if time.Since(c.startAt) < time.Duration(api.PushInterval)*time.Second {
 		return nil
 	}
-	// Get Online info
-	c.apiClient.GetIpsList()
+
 	// Get User traffic
-	ATraffic := new(sync.Map)
+	ATraffic := make(map[int]int64)
 	for _, user := range *c.userList {
 		up, down, _, _ := c.getTraffic(c.buildUserTag(&user))
 		nud := up + down
-		v, ok := Otraffic[c.Tag].Load(user.UID)
-		if !ok || v == nil {
-			// 如果值为 nil，则设为零
-			v = int64(0)
+		var pud int64
+		if v, ok := Otraffic[c.Tag].Load(user.UID); !ok {
+			pud = int64(0)
+		} else {
+			pud = v.(int64)
 		}
-		pud := v.(int64)
-		npud := nud - pud
 		// log.Infof("UID: %d, nud - pud: %d, prevup&down: %d ", user.UID, npud, pud)
-		ATraffic.Store(user.UID, npud)
+		ATraffic[user.UID] = nud - pud
 		Otraffic[c.Tag].Store(user.UID, nud)
 	}
 	// Report Online info
@@ -674,5 +678,16 @@ func (c *Controller) IpsInfoMonitor() (err error) {
 			// log.Infof("Total %d online users, %d Reported", len(*onlineDevice), len(*onlineDevice))
 		}
 	}
+	return nil
+}
+
+func (c *Controller) getIpsInfoMonitor() (err error) {
+	// delay to start
+	if time.Since(c.startAt) < time.Duration(api.PushInterval+5)*time.Second {
+		return nil
+	}
+	// Get Online info
+	c.apiClient.GetIpsList()
+
 	return nil
 }

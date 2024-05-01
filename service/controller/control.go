@@ -3,7 +3,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/xtls/xray-core/common/protocol"
 	"github.com/xtls/xray-core/core"
@@ -148,7 +147,7 @@ func (c *Controller) DeleteInboundLimiter(tag string) error {
 	return err
 }
 
-func (c *Controller) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*[]api.OnlineUser, bool, error) {
+func (c *Controller) GetOnlineDevice(tag string, userTraffic map[int]int64, T int64) (*[]api.OnlineUser, bool, error) {
 	return c.dispatcher.Limiter.GetOnlineDevice(tag, userTraffic, T)
 }
 

@@ -138,7 +138,7 @@ func (l *Limiter) DeleteInboundLimiter(tag string) error {
 	return nil
 }
 
-func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*[]api.OnlineUser, bool, error) {
+func (l *Limiter) GetOnlineDevice(tag string, userTraffic map[int]int64, T int64) (*[]api.OnlineUser, bool, error) {
 	var onlineUser []api.OnlineUser
 
 	PrevO := make(map[int]string)
@@ -171,9 +171,7 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic *sync.Map, T int64) (*
 				if a, aok := ipAllowedMap[tag].Load(ip); aok {
 					A = a.(int)
 				}
-				if x, b := userTraffic.Load(uid); b {
-					X = x.(int64)
-				}
+				X = userTraffic[uid]
 				pip = PrevO[uid]
 				if A != 2 && X > T {
 					if pip != ip {
