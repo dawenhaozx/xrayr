@@ -179,6 +179,7 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic map[int]int64, T int64
 					}
 					if X <= T {
 						ip = ""
+						diff = true
 					}
 					onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
 					nOnlineDevice[tag].Store(uid, ip)
