@@ -178,12 +178,14 @@ func (l *Limiter) GetOnlineDevice(tag string, userTraffic map[int]int64, T int64
 						diff = true
 					}
 					if X <= T {
-						ip = ""
+						onlineUser = append(onlineUser, api.OnlineUser{UID: uid})
 						diff = true
+						log.Infof("onlineUser Store,UID: %d,IP: %s", uid, "")
+					} else {
+						onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
+						nOnlineDevice[tag].Store(uid, ip)
+						log.Infof("onlineUser Store,UID: %d,IP: %s", uid, ip)
 					}
-					onlineUser = append(onlineUser, api.OnlineUser{UID: uid, IP: ip})
-					nOnlineDevice[tag].Store(uid, ip)
-					log.Infof("onlineUser Store,UID: %d,IP: %s", uid, ip)
 				}
 				return true
 			})
